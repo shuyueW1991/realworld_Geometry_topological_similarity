@@ -8,6 +8,7 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
+#Thanks to the fore**thers of 3dgs!!
 
 import os
 import torch
@@ -32,7 +33,6 @@ except ImportError:
     TENSORBOARD_FOUND = False
 
 
-# import time
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
@@ -144,6 +144,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
+
 def prepare_output_and_logger(args):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
@@ -156,6 +157,7 @@ def prepare_output_and_logger(args):
     print("Output folder: {}".format(args.model_path))
     os.makedirs(args.model_path, exist_ok = True)
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
+        # converts the arguments args into a dictionary of their attributes, then converts that dictionary into a string,
         cfg_log_f.write(str(Namespace(**vars(args))))
 
     # Create Tensorboard writer
@@ -206,9 +208,13 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
+
+    # three groups of argument paramters, poesssing some default variable values. You should check the code and their annotation where they were defined.
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
+
+    # some major concerns of 3dgs training are in the below.
     parser.add_argument('--ip', type=str, default="127.0.0.1")
     parser.add_argument('--port', type=int, default=np.random.randint(10000, 20000))
     parser.add_argument('--debug_from', type=int, default=-1)
@@ -218,17 +224,21 @@ if __name__ == "__main__":
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    args = parser.parse_args(sys.argv[1:])
+    args = parser.parse_args(sys.argv[1:])     # the args variable represents an object of the Namespace type
     args.save_iterations.append(args.iterations)
     
     print("Optimizing " + args.model_path)
 
-    # Initialize system state (RNG)
+    # Initialize system state (RNG), customizing sys.stdout fashion. No big deal.
     safe_state(args.quiet)
 
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
+
+    # this sets up the anomaly detection mode for pytorch's automatic differentiation system. If args.detect_anomaly is True, PyTorch will detect and report any anomalies in the computation graph. T
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
+    
+    # though one line, it is the core of training...
     training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
 
     # All done

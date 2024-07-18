@@ -119,6 +119,31 @@ CUDA_VISIBLE_DEVICES=1 python get_clip_features.py --image_root data/lying_zero
 
 
 
+## Render
+Frustum culling aims to identify Gaussians that have a high probability of intersecting the view frustum and a specific tile on the screen. It doesn't necessarily check for complete containment within the frustum.
+Since Gaussians represent blurred features, their actual footprint extends beyond their center point. Even if a Gaussian's center isn't entirely within the frustum, its blurry edges might still contribute to the final image in certain areas.
+Gaussian splatting often uses a confidence interval, typically set at 99%. This means the algorithm discards Gaussians with a very low chance (less than 1%) of intersecting the frustum and a tile.
+In essence, frustum culling acts as a filter. It efficiently eliminates Gaussians with a negligible contribution to the final image, based on their position and blur properties relative to the view frustum and specific screen tiles. This allows the rendering process to focus on Gaussians that are more likely to be visible, improving performance.
+
+
+
+View Frustum: This is a single, larger pyramid-shaped volume in the 3D world that defines what the camera "sees." It encompasses all objects that could potentially be rendered in the final image.
+
+Tiling: The screen is divided into smaller squares (often 16x16 pixels) for efficiency. These tiles are used to manage the rendering process for a large number of 3D Gaussians.
+
+Frustum Culling: This process checks each Gaussian against both the view frustum and the individual tiles. It discards Gaussians with a very low chance of intersecting:
+
+The view frustum itself (based on the Gaussian's position and blur properties).
+A specific tile on the screen (based on the Gaussian's potential contribution to that tile's area).
+So, while tiles are used in the overall process, the frustum culling itself operates on the larger view frustum in relation to each Gaussian, not directly on the individual tiles.
+
+Here's an analogy: Imagine a spotlight illuminating a stage. The view frustum is like the cone of light from the spotlight, defining the visible area. Tiling the stage with squares helps manage actors' positions efficiently. Frustum culling would then check if an actor is likely to be within the spotlight (view frustum) and also within a specific square on the stage (considering tile and Gaussian contribution).
+
+
+
+
+
+
 
 
 
@@ -129,7 +154,31 @@ CUDA_VISIBLE_DEVICES=1 python get_clip_features.py --image_root data/lying_zero
 
 
 ## Acknowledgement
-- [gaussian-splatting](https://github.com/graphdeco-inria/gaussian-splatting.git)
-- [SegAnyGAussians](https://github.com/Jumpat/SegAnyGAussians.git)
-- [COLMAP_LLFF](https://zhuanlan.zhihu.com/p/576416530)
+- repos
+    - [gaussian-splatting](https://github.com/graphdeco-inria/gaussian-splatting.git)
+    - [SegAnyGAussians](https://github.com/Jumpat/SegAnyGAussians.git)
+    - [COLMAP_LLFF](https://zhuanlan.zhihu.com/p/576416530)
+
+- blogs
+    - [An Overview of 3dgs](https://towardsdatascience.com/a-comprehensive-overview-of-gaussian-splatting-e7d570081362)
+    - [Image Formation and Pinhole Model of the Camera](https://towardsdatascience.com/image-formation-and-pinhole-model-of-the-camera-53872ee4ee92)
+    - [Camera Extrinsic Matrix with Example in Python](https://towardsdatascience.com/camera-extrinsic-matrix-with-example-in-python-cfe80acab8dd)
+    - [Extrinsic & intrinsic rotation: Do I multiply from right or left?](https://dominicplein.medium.com/extrinsic-intrinsic-rotation-do-i-multiply-from-right-or-left-357c38c1abfd)
+        - extrinsic: rotations all refer to a fixed/global coordinate system xyz
+        - intrinsic: a rotation refers to the last rotated coordinate system (starting with the first rotation that refers to the original/global coordinate system)
+        - Our intrinsic example: Yaw-Pitch’-Roll’’ (z-y’-x’’), that is,
+            1) rotation about the global z-axis
+            2) rotation about the new y’-axis
+            3) rotation about the new x’’-axis
+            - Matrix multiplication: R = Rotation1 ⋅ Rotation2 ⋅ Rotation3
+        - Our extrinsic example: Roll-Pitch-Yaw (x-y-z), that is,
+            1) rotation about the global x-axis
+            2) rotation about the global y-axis
+            3) rotation about the global z-axis
+            - Matrix multiplication: R=Rotation3 ⋅ Rotation2 ⋅ Rotation1
+        - citation:'...you could conclude that for the intrinsic sequence of rotations, we multiply from left to right, while we multiply from right to left for the extrinsic case.'
+
+
+    
+
 

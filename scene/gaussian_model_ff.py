@@ -72,7 +72,7 @@ def get_embedder(multires, i=0):
     embed = lambda x, eo=embedder_obj : eo.embed(x)
     return embed, embedder_obj.out_dim
 
-class FeatureGaussianModel:
+class FeatureGaussianModel: # a rough copy of class GaussianModel
 
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
@@ -93,20 +93,20 @@ class FeatureGaussianModel:
 
 
     def __init__(self, feature_dim : int):
-
+        # *** the symbol represents the thing that dont show jup in GausianModel.
         self.active_sh_degree = 0
         self.max_sh_degree = 0
 
-        self.feature_dim = feature_dim
+        self.feature_dim = feature_dim # ***
 
-        self.feature_smooth_map = None
-        self.multi_res_feature_smooth_map = []
+        self.feature_smooth_map = None # ***
+        self.multi_res_feature_smooth_map = [] # ***
         
         self._xyz = torch.empty(0)
         self._mask = torch.empty(0)
-        # self._features_dc = torch.empty(0)
+        # self._features_dc = torch.empty(0) # there is no feature dc and rest in this guassian.
         # self._features_rest = torch.empty(0)
-        self._point_features = torch.empty(0)
+        self._point_features = torch.empty(0)  # ***
         self._scaling = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
@@ -116,10 +116,10 @@ class FeatureGaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
-        self.multi_res_features = None
-        self.idx_mapper = None
+        self.multi_res_features = None # ***
+        self.idx_mapper = None # ***
 
-        self.pe = None
+        self.pe = None  # ***
         self.setup_functions()
 
         self.old_xyz = []

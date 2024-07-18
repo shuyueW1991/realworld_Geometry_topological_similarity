@@ -182,7 +182,7 @@ class GaussianModel:
         # And send it to cuda after being made sure to be float.
 
         features[:, :3, 0 ] = fused_color # corresponding to feature_dc in the below.
-        features[:, 3:, 1:] = 0.0 # corresponding to feature_rest in the below.
+        features[:, 3:, 1:] = 0.0 # corresponding to feature_rest in the below. But this line of code seems not to be functioning in reality beacuse the 1st dimension is actually null. And the tensor is initialized with zeros already.
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0]) 
 
@@ -268,6 +268,10 @@ class GaussianModel:
         opacities = self._opacity.detach().cpu().numpy() 
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
+        # `.detach()` detaches the tensor from the computational graph.  
+        # Does not change the device: The tensor remains on the original device (CPU or GPU) it was on before calling .detach().
+        # `cpu()` moves the tensor to the CPU memory.
+        # if the tensor was already on the CPU, cpu() has no effect.
 
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()] 
         #  'f4' represents a data type in NumPy for a 32-bit floating point number.
@@ -280,8 +284,9 @@ class GaussianModel:
         # The map(tuple, attributes) function converts each row of attributes into a tuple, 
         # and then the list() function converts the resulting iterator into a list of tuples. 
         # The elements[:] syntax is used to assign the values to all the elements of the elements array.
+        # the attributes is align with dtype_full now, as you can check.
 
-        el = PlyElement.describe(elements, 'vertex')
+        el = PlyElement.describe(elements, 'vertex') # syntax in PlyElement.
         PlyData([el]).write(path)
 
     # def save_ply(self, path):
@@ -311,11 +316,11 @@ class GaussianModel:
 
     def save_mask(self, path):
         mkdir_p(os.path.dirname(path))
-        mask = self._mask.detach().cpu().numpy()     # it is like in cpu data is usually to numpy, and they are torch tensors in gpu most of the time.   
+        mask = self._mask.detach().cpu().numpy()    
         np.save(path, mask)
 
     def reset_opacity(self): # used in densification phase in train_scene.py
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
+        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))  # cannot exceed 0.01
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
@@ -339,6 +344,7 @@ class GaussianModel:
         extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
         assert len(extra_f_names)==3*(self.max_sh_degree + 1) ** 2 - 3
         features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
+
         for idx, attr_name in enumerate(extra_f_names):
             features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
         # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
@@ -397,8 +403,37 @@ class GaussianModel:
                     # # Print the state dictionaries (keys will differ)
                     # print(state_dict1)  # Might output: {'0': {...}, '1': {...}} (assuming two FC layers)
                     # print(state_dict2)  # Might output: {'fc1': {...}, 'fc2': {...}} (using custom names)
+                # Also, not that:
+                # In PyTorch, optimizer.param_groups and optimizer.state are distinct dictionaries 
+                # that serve different purposes related to optimizer configuration and state management:
+                    # param_groups = [{'params': model.fc1.parameters(), 'lr': 0.01},  # Lower learning rate for fc1
+                    # {'params': model.fc2.parameters(), 'lr': 0.005}   # Higher learning rate for fc2
+                    # ]
+                    # optimizer.state = {
+                    #     # Key for the parameter group (might be an integer or name)
+                    #     '0': {
+                    #         # Exponential moving average of the squared gradients
+                    #         'exp_avg_sq': torch.tensor([0.1, 0.2, 0.3, ...]),  # Example values for each parameter
+                    #         # Exponential moving average of the gradients (estimated moment)
+                    #         'exp_avg': torch.tensor([0.01, 0.02, 0.03, ...]),  # Example values for each parameter
+                    #         # Number of steps taken since the beginning (for bias correction)
+                    #         'step': 100
+                    #     }
+                    # }
+                    # But, If you define your parameter groups with custom names during optimizer creation, 
+                    # those names will be used as keys in the state dictionary.！！！
+                    # This provides clearer identification of the parameter groups within the state.
 
-                stored_state["exp_avg"] = torch.zeros_like(tensor)
+                stored_state["exp_avg"] = torch.zeros_like(tensor)  
+                # The key 'exp_avg' in the PyTorch optimizer state dictionary refers to the exponential moving average of gradients. 
+                # This value is used by optimizers like Adam (Adaptive Moment Estimation) and RMSprop (Root Mean Square Prop) 
+                # to address issues with noisy gradients during training.
+                # Optimizers like Adam and RMSprop leverage the 'exp_avg' value along with another key, 
+                # 'exp_avg_sq' (exponential moving average of squared gradients), 
+                # to adapt the learning rate for each parameter based on the recent gradient history.
+                # It's important to note that not all optimizers in PyTorch use the 'exp_avg' key. 
+                # For instance, SGD (Stochastic Gradient Descent) relies solely on the current gradient for updates and doesn't require exponential averaging.
+                # The shape of exp_avg in the optimizer's state dictionary from torch.state_dict()  matches the shape of the corresponding tensor it tracks the average for.
                 stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
 
                 del self.optimizer.state[group['params'][0]]
@@ -414,7 +449,8 @@ class GaussianModel:
             stored_state = self.optimizer.state.get(group['params'][0], None) # group['params'] is a list, so index it with [0]; group['params'][0] shoudl be a class variable e.g. self._xxxx.
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
-                stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
+                stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask] 
+                # if the state has the propoerties like `exp_avg` and `exp_avg_sq`, 
 
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
@@ -446,10 +482,13 @@ class GaussianModel:
         self.max_radii2D = self.max_radii2D[valid_points_mask]
 
     @torch.no_grad()
-    def segment(self, mask=None):
+    def segment(self, mask=None): 
+        # I asked the author of this code 'jumpat' to explain how this function works. 
+        # This function emoved the background Gaussians and its related attributes from the model. 
+        # The remained Gaussians describe the target object you segmented (stored as precomputed_mask.pt, which is a binary mask)
         assert mask is not None
             # mask = (self._mask > 0)
-        mask = mask.squeeze()
+        mask = mask.squeeze() # squeeze() function removes all dimensions of a tensor that have a size of 1
         # assert mask.shape[0] == self._xyz.shape[0]
         if torch.count_nonzero(mask) == 0:
             mask = ~mask
@@ -554,6 +593,7 @@ class GaussianModel:
 
                 stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], torch.zeros_like(extension_tensor)), dim=0)
                 stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], torch.zeros_like(extension_tensor)), dim=0)
+                # i think the different values here is why the original and cloned tensors evovles differently in the course of subsequent optimziation.
 
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
@@ -563,6 +603,7 @@ class GaussianModel:
             else:
                 group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
                 optimizable_tensors[group["name"]] = group["params"][0]
+                # why the store_state operation on  `exp_avg` and `exp_avg_sq` is not needed here?
 
         return optimizable_tensors
 
@@ -591,6 +632,7 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
+        # regions with high variance as described in the paper.
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
@@ -599,11 +641,16 @@ class GaussianModel:
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
 
-        stds = self.get_scaling[selected_pts_mask].repeat(N,1)
-        means =torch.zeros((stds.size(0), 3),device="cuda")
+        stds = self.get_scaling[selected_pts_mask].repeat(N,1) # repeat N times along dimension 1.
+        means =torch.zeros((stds.size(0), 3),device="cuda") # means are zerolike matrix.
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        # in the area surrounding old xyz, sample from a normal distribution.
+        # When you apply unsqueeze(-1) to the output tensor of torch.normal, 
+        # you're essentially adding a new dimension of size 1 to the last dimension of the generated random tensor.
+        # the new_xyz is of shape (N, 3, 1)
+
 
         # new_mask = self._mask[selected_pts_mask].repeat(N,1)
 
@@ -619,8 +666,13 @@ class GaussianModel:
         self.prune_points(prune_filter)
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
+        # regions `under-constructed` as described in the paper.
         # Extract points that satisfy the gradient condition
-        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
+        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False) # it is `norm` not `normalize`.
+        # creates a mask (selected_pts_mask) based on a condition 
+        # where the Euclidean norm of grads along the last dimension is compared against grad_threshold. 
+        # If the norm is greater than or equal to grad_threshold, the corresponding entry in the mask is set to True; 
+        # otherwise, it is set to False.
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
         

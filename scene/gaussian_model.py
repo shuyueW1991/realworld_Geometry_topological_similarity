@@ -33,33 +33,40 @@ class GaussianModel:
         """
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation): # i  see scaling_modifer only in get_covariance function.
             L = build_scaling_rotation(scaling_modifier * scaling, rotation) # the shape is: Nx3x3 rotation @ Nx3x3 scaling matrix
-            actual_covariance = L @ L.transpose(1, 2) # cf. formula (6) in vanilla 3dgs paper, the formula for covariance matrix \Sigma of a 3D gaussian.
+            actual_covariance = L @ L.transpose(1, 2) # cf. formula (6) in vanilla 3dgs paper, the formula for covariance matrix \Sigma of a 3D gaussian. 
+            # A more detailed illustration of the formula can be found in README.md.
             symm = strip_symmetric(actual_covariance) # makes it (N,1) tensor.
-            return symm
+            return symm     # (N,6) tensor shape
         
         # the following is activation functions as well some inverse activation.
-        self.scaling_activation = torch.exp
+        self.scaling_activation = torch.exp  # vanilla 3dgs paper says this is for a smooth gradient
         self.scaling_inverse_activation = torch.log
 
-        self.covariance_activation = build_covariance_from_scaling_rotation
+        self.covariance_activation = build_covariance_from_scaling_rotation     # (N,6) tensor shape
 
         self.opacity_activation = torch.sigmoid #  1 / (1 + e^(-x)), squishes real numbers between 0 and 1.
-        self.inverse_opacity_activation = inverse_sigmoid  # the logit function, takes a value between 0 and 1 (often interpreted as a probability) and transforms it to a real number on the entire number line.
+        self.inverse_opacity_activation = inverse_sigmoid  
+        # the logit function, takes a value between 0 and 1 (often interpreted as a probability) 
+        # and transforms it to a real number on the entire number line.
 
-        self.rotation_activation = torch.nn.functional.normalize
+        self.rotation_activation = torch.nn.functional.normalize  # By default, it normalizes along dimension 1 (across rows for a matrix)
 
+        ## xyz is not `activated`, nor is features.
 
     def __init__(self, sh_degree : int):
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
         self._xyz = torch.empty(0)
         self._mask = torch.empty(0)  # absent in vanilla 3dgs 
+        # I asked about this with jumpat, the great author of repo <seganygaussians>, who told me that 
+        # this _mask is designed for the SAGA GUI to support interactive segmentation, specifically, the Undo operation. 
+        # _mask is a counter to trace the current segmentation state and save the previous states.
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
         self._scaling = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
-        self.max_radii2D = torch.empty(0)
+        self.max_radii2D = torch.empty(0) # radii is something occuring in rendering process, determininng the range of (concerned) point cloud.
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
         self.optimizer = None # initialzie the optimizer
@@ -77,7 +84,7 @@ class GaussianModel:
         self.old_scaling = []
         self.old_rotation = []
 
-    def capture(self):
+    def capture(self): # this is for saving checkpoint by torch.save in train_scene.py
         return (
             self.active_sh_degree,
             self._xyz,
@@ -94,7 +101,7 @@ class GaussianModel:
             self.spatial_lr_scale,
         )
     
-    def restore(self, model_args, training_args):
+    def restore(self, model_args, training_args): # this is for loading non-zeroth checkpoint for initialization in train_scene.py, like an inverse operation against `capture()`.
         (self.active_sh_degree, 
         self._xyz,
         self._mask,   # absent in vanilla 3dgs
@@ -109,10 +116,14 @@ class GaussianModel:
         opt_dict, 
         self.spatial_lr_scale) = model_args
         self.training_setup(training_args)
+
         self.xyz_gradient_accum = xyz_gradient_accum
         self.denom = denom
+        ## why did't vanilla 3dgs author merge the two lines into the set bracket like others?
+
         self.optimizer.load_state_dict(opt_dict)  #  load_state_dict() takes a dictionary (the state_dict) as input and loads it into the existing optimizer object. It essentially restores the optimizer to the state it was in when the state_dict was created.
 
+    # The following 6 get_ properties are convenient to leave activation when obtaining. 6 among the 7 tensors are optimzed in the project via pytorch.
     @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
@@ -125,7 +136,7 @@ class GaussianModel:
     def get_xyz(self):
         return self._xyz
     
-    @property  # absent in vanilla 3dgs
+    @property  
     def get_mask(self):
         return self._mask
     
@@ -152,10 +163,10 @@ class GaussianModel:
         # pcd.points: 1 np.array, make it float and sent to cuda.
 
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda()) 
-        # pcd.points: 1 np.array, make it float and sent to cuda, then from rgb to spherical harmonics.
+        # pcd.points: 1 np.array, make it float and sent to cuda, then from rgb to spherical harmonics. Each rgb channel is now waiting for several SH polynomicals to descriibe via coefficients.
 
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
-        # features initialization: e.g. (N, 3, 9), N is number of points. 
+        # features initialization: e.g. (N, 3, 9), N being number of points. 
         # In spherical harmonics,  m and l are integers that define the specific harmonic function and its properties. Here's a breakdown of their roles:
 
             # 1. Orbital Angular Momentum Quantum Number (l):
@@ -182,7 +193,9 @@ class GaussianModel:
         # And send it to cuda after being made sure to be float.
 
         features[:, :3, 0 ] = fused_color # corresponding to feature_dc in the below.
-        features[:, 3:, 1:] = 0.0 # corresponding to feature_rest in the below. But this line of code seems not to be functioning in reality beacuse the 1st dimension is actually null. And the tensor is initialized with zeros already.
+        features[:, 3:, 1:] = 0.0 
+        # corresponding to feature_rest in the below. 
+        # But this line of code seems not to be functioning in reality beacuse the 1st dimension is actually null. And the tensor is initialized with zeros already.
 
         print("Number of points at initialisation : ", fused_point_cloud.shape[0]) 
 
@@ -236,7 +249,7 @@ class GaussianModel:
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
-        for param_group in self.optimizer.param_groups:
+        for param_group in self.optimizer.param_groups: # in optimizer of pytorch, param_groups is the director of optimization.
             if param_group["name"] == "xyz": # which means other parameters than xyz positions are being trained with fixed lr.
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
@@ -260,7 +273,7 @@ class GaussianModel:
         mkdir_p(os.path.dirname(path))
 
         # release all the learnt parameters to cpu 
-        xyz = self._xyz.detach().cpu().numpy()
+        xyz = self._xyz.detach().cpu().numpy() # when it comes to save, it has to be on cpu
         # mask = self._mask.detach().cpu().numpy()
         normals = np.zeros_like(xyz)  # every point has their normals?? seems like they are all 0.
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy() # f_dc has shape (N, d)
@@ -289,37 +302,12 @@ class GaussianModel:
         el = PlyElement.describe(elements, 'vertex') # syntax in PlyElement.
         PlyData([el]).write(path)
 
-    # def save_ply(self, path):
-    #     mkdir_p(os.path.dirname(path))
-
-    #     xyz = self._xyz.detach().cpu().numpy()
-    #     normals = np.zeros_like(xyz)
-    #     f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-    #     f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-    #     opacities = self._opacity.detach().cpu().numpy()
-    #     scale = self._scaling.detach().cpu().numpy()
-    #     rotation = self._rotation.detach().cpu().numpy()
-
-    #     dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
-    #     # edit
-    #     add_color = True
-    #     if add_color:
-    #         dtype_full[3], dtype_full[4], dtype_full[5] = ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')
-    #         rgbs = SH2RGB(f_dc)
-    #         normals = (np.clip(rgbs, 0.0, 1.0) * 255).astype(np.uint8)
-            
-    #     elements = np.empty(xyz.shape[0], dtype=dtype_full)
-    #     attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
-    #     elements[:] = list(map(tuple, attributes))
-    #     el = PlyElement.describe(elements, 'vertex')
-    #     PlyData([el]).write(path)
-
-    def save_mask(self, path):
+    def save_mask(self, path): # it's effectively save the _mask
         mkdir_p(os.path.dirname(path))
         mask = self._mask.detach().cpu().numpy()    
         np.save(path, mask)
 
-    def reset_opacity(self): # used in densification phase in train_scene.py
+    def reset_opacity(self): # used in densification phase in train_scene.py, claimed to be an effective way to moderate the increae of the number of gaussians.
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))  # cannot exceed 0.01
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
@@ -420,7 +408,7 @@ class GaussianModel:
                     #         'step': 100
                     #     }
                     # }
-                    # But, If you define your parameter groups with custom names during optimizer creation, 
+                    # ！！！But, If you define your parameter groups with custom names during optimizer creation, 
                     # those names will be used as keys in the state dictionary.！！！
                     # This provides clearer identification of the parameter groups within the state.
 
@@ -431,10 +419,31 @@ class GaussianModel:
                 # Optimizers like Adam and RMSprop leverage the 'exp_avg' value along with another key, 
                 # 'exp_avg_sq' (exponential moving average of squared gradients), 
                 # to adapt the learning rate for each parameter based on the recent gradient history.
-                # It's important to note that not all optimizers in PyTorch use the 'exp_avg' key. 
-                # For instance, SGD (Stochastic Gradient Descent) relies solely on the current gradient for updates and doesn't require exponential averaging.
+                    # It's important to note that not all optimizers in PyTorch use the 'exp_avg' key. 
+                    # For instance, SGD (Stochastic Gradient Descent) relies solely on the current gradient for updates and doesn't require exponential averaging.
                 # The shape of exp_avg in the optimizer's state dictionary from torch.state_dict()  matches the shape of the corresponding tensor it tracks the average for.
                 stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
+
+                # in PyTorch optimizers, the state dictionary (state) of a tensor can hold various entries besides exp_avg and exp_avg_sq depending on the specific optimizer used. Here are some common entries you might encounter:
+                # 1. Momentum based optimizers (e.g., SGD with momentum, Adam):
+
+                # momentum: This stores the momentum term used by the optimizer. It helps the optimizer to converge faster by accumulating the gradients in previous steps.
+                # 2. Adam family optimizers (Adam, AdamW, Adadelta, etc.):
+
+                # beta1 and beta2: These are hyperparameters that control the exponential decay rates of the first and second moment estimates, respectively, used in Adam variants.
+                # eps: A small value for numerical stability, similar to the eps used in normalization.
+                # 3. RMSprop and variants (RMSprop, Adagrad):
+
+                # square_avg: This stores the squared average of the gradients used for normalization in RMSprop variants.
+                # 4. Other optimizers:
+
+                # Some optimizers might have additional state entries specific to their algorithms. It's always best to consult the documentation for the specific optimizer you're using to understand its state dictionary entries.
+                # Here are some resources for further exploration:
+
+                # PyTorch documentation on optimizers: https://pytorch.org/docs/stable/optim.html
+                # Specific optimizer documentation (e.g., Adam): https://pytorch.org/docs/stable/generated/torch.optim.Adam.html
+                #  In summary, exp_avg and exp_avg_sq are commonly used for momentum and Adam-based optimizers, but the state dictionary can hold various other entries depending on the specific optimizer and its underlying algorithm.
+
 
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
@@ -443,7 +452,7 @@ class GaussianModel:
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
-    def _prune_optimizer(self, mask):
+    def _prune_optimizer(self, mask): # here the mask is the filter that picks out the gaussians  in view frustum.
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
             stored_state = self.optimizer.state.get(group['params'][0], None) # group['params'] is a list, so index it with [0]; group['params'][0] shoudl be a class variable e.g. self._xxxx.
@@ -453,10 +462,11 @@ class GaussianModel:
                 # if the state has the propoerties like `exp_avg` and `exp_avg_sq`, 
 
                 del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
+                group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True))) # i optimization only masked tensors needs be optimized, so it be reestablished; otherwise, the tensor still gets optimized completely.
                 self.optimizer.state[group['params'][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
+
             else:
                 group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
                 optimizable_tensors[group["name"]] = group["params"][0]
@@ -536,6 +546,8 @@ class GaussianModel:
         tmp[mask] += 1
         self._mask[self._mask == self.segment_times] = tmp
 
+        
+
         # print(self._mask[self._mask == self.segment_times][mask].shape)
         # print(self.segment_times, torch.unique(self._mask), torch.unique(mask))
         
@@ -608,6 +620,7 @@ class GaussianModel:
         return optimizable_tensors
 
     def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation):
+        # register new changes to class instance variables
         d = {"xyz": new_xyz,
         # "mask": new_mask,
         "f_dc": new_features_dc,
@@ -694,6 +707,9 @@ class GaussianModel:
 
         self.densify_and_clone(grads, max_grad, extent)
         self.densify_and_split(grads, max_grad, extent)
+
+        # Au contriare de my guess, the clone and split is not done by deplicating a new GaussianModel class instance;
+        # they just catenate the tensors to the original ones.
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:

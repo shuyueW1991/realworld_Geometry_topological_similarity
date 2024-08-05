@@ -27,16 +27,15 @@ class GaussianModel:
         """
         Set up the activation functions and inverse activation functions for the GaussianModel.
 
-        This function sets up the activation functions and inverse activation functions for the GaussianModel. It defines the `build_covariance_from_scaling_rotation` function, which takes in scaling, scaling_modifier, and rotation as parameters and returns the symmetric covariance matrix.
+        This function sets up the activation functions and inverse activation functions for the GaussianModel. 
 
-        This function does not take any parameters and does not return any values.
         """
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation): # i  see scaling_modifer only in get_covariance function.
             L = build_scaling_rotation(scaling_modifier * scaling, rotation) # the shape is: Nx3x3 rotation @ Nx3x3 scaling matrix
             actual_covariance = L @ L.transpose(1, 2) # cf. formula (6) in vanilla 3dgs paper, the formula for covariance matrix \Sigma of a 3D gaussian. 
             # A more detailed illustration of the formula can be found in README.md.
             symm = strip_symmetric(actual_covariance) # makes it (N,1) tensor.
-            return symm     # (N,6) tensor shape
+            return symm     # (N,6) tensor shape, a symmetric covariance matrix.
         
         # the following is activation functions as well some inverse activation.
         self.scaling_activation = torch.exp  # vanilla 3dgs paper says this is for a smooth gradient

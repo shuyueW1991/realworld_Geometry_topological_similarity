@@ -1,0 +1,54 @@
+[THIS IS RECORDINGS ON MY OWN SERVER.]
+conda activate feature3dgs_2_seganygaussians_v !!
+
+
+
+COMMAND
+python train_scene.py -s data/standing_zero 
+RESULT
+output/937f1cd0-5/
+
+COMMAND
+python extract_segment_everything_masks.py --image_root data/standing_zero  
+RESULT
+data/standing_zero/sam_masks
+
+COMMAND
+python get_scale.py --image_root data/standing_zero/ --model_path output/937f1cd0-5/
+RESULT
+data/standing_zero/mask_scales
+
+COMMAND
+python train_contrastive_feature.py -m output/937f1cd0-5/ --iterations 10000 --num_sampled_rays 1000
+RESULT
+
+the images maybe too large...
+now i try another set with smaller size.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+COMMAND
+python train_scene.py -s data/gesture_holding_quarter
+RESULT
+output/dc72fe2c-c/
+
+Meanwhile, run 
+COMMAND
+python extract_segment_everything_masks.py --image_root data/gesture_holding_quarter
+RESULT
+data/gesture_holding_quarter/sam_scales
+
+COMMAND
+python get_scale.py --image_root data/gesture_holding_quarter --model_path output/dc72fe2c-c/
+RESULT
+data/gesture_holding_quarter/mask_scales
+
+COMMAND
+python train_contrastive_feature.py -m output/dc72fe2c-c/ --iterations 10000 --num_sampled_rays 1000
+(since it is too time-consuming, 4 hours as I peeked), i make it run on 4 cards with a nohup magic.
+CUDA_VISIBLE_DEVICES=0,1,2,3 nohup python train_contrastive_feature.py -m output/dc72fe2c-c/ --iterations 10000 --num_sampled_rays 1000 > train_contrastive_feature.log &
+RESULT
+
+
+

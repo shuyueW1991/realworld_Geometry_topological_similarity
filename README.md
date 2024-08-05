@@ -1,7 +1,6 @@
 # Realworld Geometry topological similarity
 ## Why?
-- Sometimes, it is likely that we are interested in comparing the different topologies that belongs to entities that we observe in the real world. There are a lot of topologies that is hard to be named simply via `rectangle`, `cubic `, and there is a lack of measuring approach. 
-- This repository tries to solve this problem so that you can take some photos of two entities and calculate their delicate topological differences.
+Sometimes, it is likely that we are interested in comparing the different topologies that belongs to entities that we observe in the real world. There are a lot of topologies that is hard to be easily named simply with `rectangle`, `cubic `, etc. There is a lack of measuring approach. This repository tries to solve this problem so that you can take some photos of two entities and calculate their delicate topological differences.
 
 
 ## Take photos of a certain entity
@@ -9,6 +8,7 @@
 - Make sure the entity occupy at most 50% of the image, otherwise the automatic mask generator of SAM will give too detailed segmentations. 
 - Make sure successful focus on the entity's surface.
 - As for metallic surface, make sure the reflective light that affect the depth estimation in subsequent point cloud reconstruction.
+
 
 ## Pipe your photos through COLMAP
 - installation of COLMAP
@@ -37,7 +37,8 @@
                 database.db
             ...
         ```
-
+### note the image resize can be acomplished in hhttps://www.iloveimg.com
+### a more detailed record of running the code can be checked in <cmd_record.txt>.
 
 ## Deploy thie repository and install all the necessary.
 My remoter is operated on Ubuntu22.04, with Cuda version being 12.1.
@@ -65,6 +66,7 @@ CUDA_VISIBLE_DEVICES=1 python train_scene.py -s data/lying_zero/
 ```
 
 The trained result is in folder <output> with a unique number in the foldername.
+
 
 
 ## Get the sam_masks and corresponding mask scales
@@ -147,10 +149,23 @@ Here's an analogy: Imagine a spotlight illuminating a stage. The view frustum is
 
 
 
-
-
-
-
+## Why covariance matrix in the form of formula(6) in vanilla 3dgs paper?
+- covariance matrix is what?
+    - A covariance matrix is a square matrix that captures the linear relationships between different variables in a data set. 
+    - It shows how much two variables tend to vary together. 
+        - If you have a matrix A of (M, 2) where M represents population and 2 represents dimension of features (height, weight).
+        - Then the covariance matrix of A can be computed via $A^TA$, leading to a (2,2) square matrix.
+    - In 3dgs case, standard gaussian is to be scaled and rotated, which translates to  $RS$. 
+    - For a point in its vector form $
+                                        \mathbf{v} = \begin{bmatrix}
+                                          x_1 \\
+                                          x_2 \\
+                                          \vdots \\
+                                          x_n
+                                        \end{bmatrix}
+                                    $ of dimension (3,1), the scaled-and-roated point coordinates should be of shape (3,1).
+    - Therefore, for getting its covariance, it is matrix multipliced with its transpose.
+    - Thus, $RSS^TR^T$.
 
 
 ## Acknowledgement

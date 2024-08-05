@@ -35,7 +35,7 @@ except ImportError:
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
-    first_iter = 0
+    first_iter = 0  #initialize the iteration number.  this funciton here is mainly for the for-loop for training iterations.
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
@@ -152,6 +152,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
 
 def prepare_output_and_logger(args):    
+    # Set up output folder name
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
             unique_str=os.getenv('OAR_JOB_ID')
@@ -164,7 +165,9 @@ def prepare_output_and_logger(args):
     os.makedirs(args.model_path, exist_ok = True)
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         # converts the arguments args into a dictionary of their attributes, then converts that dictionary into a string,
-        cfg_log_f.write(str(Namespace(**vars(args))))
+        cfg_log_f.write(str(Namespace(**vars(args))))   
+        # The Namespace() constructor is used to create a new object from the dictionary, 
+        # and the ** operator is used to unpack the dictionary into keyword arguments for the Namespace() constructor. 
 
     # Create Tensorboard writer
     tb_writer = None
@@ -210,6 +213,8 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
+
+
 
 if __name__ == "__main__":
     # Set up command line argument parser
